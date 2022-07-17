@@ -19,6 +19,9 @@ from .const import (
     SERVICE_FORCIBLE_CHARGE_SOC,
     SERVICE_FORCIBLE_DISCHARGE,
     SERVICE_FORCIBLE_DISCHARGE_SOC,
+    SERVICE_RESET_MAXIMUM_FEED_GRID_POWER,
+    SERVICE_SET_MAXIMUM_FEED_GRID_POWER,
+    SERVICE_SET_MAXIMUM_FEED_GRID_POWER_PERCENT,
     SERVICE_STOP_FORCIBLE_CHARGE,
 )
 
@@ -27,6 +30,7 @@ if TYPE_CHECKING:
 
 DATA_DEVICE_ID = "device_id"
 DATA_POWER = "power"
+DATA_POWER_PERCENTAGE="power_percentage"
 DATA_DURATION = "duration"
 DATA_TARGET_SOC = "target_soc"
 
@@ -54,6 +58,19 @@ SOC_SCHEMA = FORCIBLE_CHARGE_BASE_SCHEMA.extend(
         )
     }
 )
+
+MAXIMUM_FEED_GRID_POWER_SCHEMA = DEVICE_SCHEMA.extend(
+    {
+        vol.Required(DATA_POWER): vol.All(vol.Coerce(int), vol.Range(min=-1000)),
+    }
+)
+
+MAXIMUM_FEED_GRID_POWER_PERCENTAGE_SCHEMA = DEVICE_SCHEMA.extend(
+    {
+        vol.Required(DATA_POWER_PERCENTAGE): vol.All(vol.Coerce(int), vol.Range(min=0,max=100)),
+    }
+)
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -166,7 +183,7 @@ async def async_setup_services(
         )
 
     async def stop_forcible_charge(service_call: ServiceCall) -> None:
-        """Start a forcible discharge on the battery until the target SOC is hit."""
+        """Stops a forcible charge or discharge."""
 
         bridge = get_battery_bridge(service_call)
         await bridge.set(
@@ -179,6 +196,48 @@ async def async_setup_services(
             0,
         )
         await bridge.set(rn.STORAGE_FORCIBLE_CHARGE_DISCHARGE_SETTING_MODE, 0)
+
+
+
+    async def reset_maximum_feed_grid_power(service_call: ServiceCall) -> None:
+        """Sets Active Power Control to 'Power-limited grid connection' with the given wattage."""
+
+        bridge = get_battery_bridge(service_call)
+        await bridge.set(
+            rn.ACTIVE_POWER_CONTROL_MODE,
+            rv.ActivePowerControlMode.UNLIMITED,
+        )
+        await bridge.set(rn.MAXIMUM_FEED_GRID_POWER_WATT, 0)
+        await bridge.set(
+            rn.MAXIMUM_FEED_GRID_POWER_PERCENT,
+            0,
+        )
+
+    async def set_maximum_feed_grid_power(service_call: ServiceCall) -> None:
+        """Sets Active Power Control to 'Power-limited grid connection' with the given wattage."""
+
+        power = service_call.data[DATA_POWER]
+
+        bridge = get_battery_bridge(service_call)
+        await bridge.set(
+            rn.ACTIVE_POWER_CONTROL_MODE,
+            rv.ActivePowerControlMode.POWER_LIMITED_GRID_CONNECTION_WATT,
+        )
+        await bridge.set(rn.MAXIMUM_FEED_GRID_POWER_WATT, power)
+
+
+    async def set_maximum_feed_grid_power_percentage(service_call: ServiceCall) -> None:
+        """Sets Active Power Control to 'Power-limited grid connection' with the given percentage."""
+
+        power_percentage = service_call.data[DATA_POWER_PERCENTAGE]
+
+        bridge = get_battery_bridge(service_call)
+        await bridge.set(
+            rn.ACTIVE_POWER_CONTROL_MODE,
+            rv.ActivePowerControlMode.POWER_LIMITED_GRID_CONNECTION_PERCENT,
+        )
+        await bridge.set(rn.MAXIMUM_FEED_GRID_POWER_PERCENT, power_percentage)
+
 
     if entry.data.get(CONF_ENABLE_PARAMETER_CONFIGURATION, False):
         hass.services.async_register(
@@ -204,4 +263,25 @@ async def async_setup_services(
             SERVICE_STOP_FORCIBLE_CHARGE,
             stop_forcible_charge,
             schema=DEVICE_SCHEMA,
+        )
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_RESET_MAXIMUM_FEED_GRID_POWER,
+            reset_maximum_feed_grid_power,
+            schema=DEVICE_SCHEMA
+        )
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_MAXIMUM_FEED_GRID_POWER,
+            set_maximum_feed_grid_power,
+            schema=DEVICE_SCHEMA
+        )
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_MAXIMUM_FEED_GRID_POWER_PERCENT,
+            set_maximum_feed_grid_power_percentage,
+            schema=DEVICE_SCHEMA
         )
